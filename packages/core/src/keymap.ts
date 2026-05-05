@@ -56,6 +56,9 @@ export type KeyboardLayoutKey = {
   y: number;
   width: number;
   height: number;
+  rotation: number;
+  rotationX: number;
+  rotationY: number;
 };
 
 export type KeyboardLayout = {
@@ -70,7 +73,10 @@ export function createPlaceholderLayout(keyCount: number, columns = 12): Keyboar
       x: position % safeColumns,
       y: Math.floor(position / safeColumns),
       width: 1,
-      height: 1
+      height: 1,
+      rotation: 0,
+      rotationX: 0,
+      rotationY: 0
     }))
   };
 }

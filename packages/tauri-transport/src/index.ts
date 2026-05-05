@@ -17,7 +17,7 @@ import type {
   Layer,
   LayerId
 } from "@alt-zmk-studio/core";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { TransportError, type SerialDevice, type TransportErrorCode, type ZmkDeviceTransport } from "@alt-zmk-studio/transport";
 
 type BackendError = {
@@ -67,7 +67,19 @@ function normalizeError(error: unknown): TransportError {
   return new TransportError("unknown", "Unexpected transport error.");
 }
 
+function hasTauriInvoke(): boolean {
+  const internals = (globalThis as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__;
+  return isTauri() && typeof internals?.invoke === "function";
+}
+
 async function invokeTransport<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!hasTauriInvoke()) {
+    throw new TransportError(
+      "unsupported",
+      "Tauri IPC is not available. Start the desktop shell with `yarn tauri dev`; opening the Vite localhost page in a normal browser cannot access USB serial devices."
+    );
+  }
+
   try {
     return await invoke<T>(command, args);
   } catch (error) {

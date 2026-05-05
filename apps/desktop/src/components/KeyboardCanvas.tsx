@@ -18,36 +18,52 @@ export function KeyboardCanvas() {
     );
   }
 
-  const columns = Math.max(...layout.keys.map((key) => key.x + key.width), 1);
-  const rows = Math.max(...layout.keys.map((key) => key.y + key.height), 1);
+  const minX = Math.min(...layout.keys.map((key) => key.x), 0);
+  const minY = Math.min(...layout.keys.map((key) => key.y), 0);
+  const maxX = Math.max(...layout.keys.map((key) => key.x + key.width), 1);
+  const maxY = Math.max(...layout.keys.map((key) => key.y + key.height), 1);
+  const unit = 56;
+  const gap = 8;
+  const canvasWidth = Math.max((maxX - minX) * unit + gap * 2, 720);
+  const canvasHeight = Math.max((maxY - minY) * unit + gap * 2, 240);
   const bindings = new Map(layer.keys.map((key) => [key.position, key.binding]));
 
   return (
     <div className="overflow-auto rounded-md border border-slate-200 bg-slate-50 p-4">
       <div
-        className="grid min-w-[720px] gap-2"
+        className="relative"
         style={{
-          gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-          gridTemplateRows: `repeat(${rows}, 3.25rem)`
+          width: `${canvasWidth}px`,
+          height: `${canvasHeight}px`
         }}
       >
         {layout.keys.map((key) => {
           const binding = bindings.get(key.position) ?? { kind: "none" as const };
           const isSelected = key.position === selectedPosition;
+          const left = (key.x - minX) * unit + gap;
+          const top = (key.y - minY) * unit + gap;
+          const width = key.width * unit - 4;
+          const height = key.height * unit - 4;
+          const transformOriginX = (key.rotationX - key.x) * unit;
+          const transformOriginY = (key.rotationY - key.y) * unit;
           return (
             <button
               key={key.position}
               type="button"
               onClick={() => selectKey(key.position)}
               className={[
-                "flex h-full min-w-0 flex-col items-center justify-center rounded-md border bg-white px-2 text-center text-sm shadow-sm transition",
+                "absolute flex min-w-0 flex-col items-center justify-center rounded-md border bg-white px-2 text-center text-sm shadow-sm transition",
                 isSelected
                   ? "border-slate-950 ring-2 ring-slate-950"
                   : "border-slate-200 hover:border-slate-400"
               ].join(" ")}
               style={{
-                gridColumn: `${key.x + 1} / span ${key.width}`,
-                gridRow: `${key.y + 1} / span ${key.height}`
+                left: `${left}px`,
+                top: `${top}px`,
+                width: `${width}px`,
+                height: `${height}px`,
+                transform: key.rotation ? `rotate(${key.rotation}deg)` : undefined,
+                transformOrigin: `${transformOriginX}px ${transformOriginY}px`
               }}
             >
               <span className="max-w-full truncate font-medium">{formatKeyBinding(binding)}</span>

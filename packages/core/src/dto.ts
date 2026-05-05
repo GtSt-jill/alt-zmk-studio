@@ -32,6 +32,9 @@ export type KeyboardLayoutDto = {
     y: number;
     width: number;
     height: number;
+    rotation?: number | null;
+    rotationX?: number | null;
+    rotationY?: number | null;
   }>;
 };
 
@@ -103,6 +106,15 @@ export function keymapLayerFromDtos(layer: LayerDto, keys: KeymapKeyDto[]): Keym
 
 export function keyboardLayoutFromDto(dto: KeyboardLayoutDto): KeyboardLayout {
   return {
-    keys: dto.keys.map((key) => ({ ...key }))
+    keys: dto.keys.map((key) => ({
+      position: key.position,
+      x: key.x,
+      y: key.y,
+      width: key.width,
+      height: key.height,
+      rotation: key.rotation ?? 0,
+      rotationX: key.rotationX ?? 0,
+      rotationY: key.rotationY ?? 0
+    }))
   };
 }

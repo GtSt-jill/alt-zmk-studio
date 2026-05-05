@@ -43,6 +43,9 @@ pub struct KeyboardLayoutKeyDto {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+    pub rotation: f32,
+    pub rotation_x: f32,
+    pub rotation_y: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

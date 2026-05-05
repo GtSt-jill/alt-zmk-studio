@@ -4,9 +4,9 @@ import { createPlaceholderLayout, updateKeyBinding } from "../src/keymap";
 describe("createPlaceholderLayout", () => {
   it("creates a stable grid", () => {
     expect(createPlaceholderLayout(3, 2).keys).toEqual([
-      { position: 0, x: 0, y: 0, width: 1, height: 1 },
-      { position: 1, x: 1, y: 0, width: 1, height: 1 },
-      { position: 2, x: 0, y: 1, width: 1, height: 1 }
+      { position: 0, x: 0, y: 0, width: 1, height: 1, rotation: 0, rotationX: 0, rotationY: 0 },
+      { position: 1, x: 1, y: 0, width: 1, height: 1, rotation: 0, rotationX: 0, rotationY: 0 },
+      { position: 2, x: 0, y: 1, width: 1, height: 1, rotation: 0, rotationX: 0, rotationY: 0 }
     ]);
   });
 });

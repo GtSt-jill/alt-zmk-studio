@@ -4,7 +4,7 @@ use std::time::Duration;
 use serialport::SerialPort;
 use zmk_studio_api::{Behavior, HidUsage, Keycode, StudioClient};
 
-use crate::dto::{DeviceInfoDto, KeyBindingDto, KeyboardLayoutDto, LayerDto};
+use crate::dto::{DeviceInfoDto, KeyBindingDto, KeyboardLayoutDto, KeyboardLayoutKeyDto, LayerDto};
 use crate::error::{CommandError, CommandResult};
 
 const BAUD_RATE: u32 = 12_500;
@@ -82,7 +82,38 @@ impl ZmkClient {
     }
 
     pub fn get_keyboard_layout(&mut self) -> CommandResult<Option<KeyboardLayoutDto>> {
-        Ok(None)
+        let Ok(layouts) = self.client.get_physical_layouts() else {
+            return Ok(None);
+        };
+        let Some(layout) = layouts
+            .layouts
+            .get(usize::try_from(layouts.active_layout_index).unwrap_or_default())
+            .or_else(|| layouts.layouts.first())
+        else {
+            return Ok(None);
+        };
+
+        let keys = layout
+            .keys
+            .iter()
+            .enumerate()
+            .map(|(position, key)| KeyboardLayoutKeyDto {
+                position: u16::try_from(position).unwrap_or(u16::MAX),
+                x: physical_unit(key.x),
+                y: physical_unit(key.y),
+                width: physical_size(key.width),
+                height: physical_size(key.height),
+                rotation: physical_rotation(key.r),
+                rotation_x: physical_unit(key.rx),
+                rotation_y: physical_unit(key.ry),
+            })
+            .collect::<Vec<_>>();
+
+        if keys.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(KeyboardLayoutDto { keys }))
+        }
     }
 
     pub fn get_key_binding(&mut self, layer_id: u8, position: u16) -> CommandResult<KeyBindingDto> {
@@ -193,4 +224,21 @@ fn map_client_error(error: impl std::fmt::Display) -> CommandError {
         "deviceError"
     };
     CommandError::new(code, message)
+}
+
+fn physical_unit(value: i32) -> f32 {
+    value as f32 / 100.0
+}
+
+fn physical_size(value: i32) -> f32 {
+    let normalized = physical_unit(value);
+    if normalized <= 0.0 {
+        1.0
+    } else {
+        normalized
+    }
+}
+
+fn physical_rotation(value: i32) -> f32 {
+    value as f32 / 100.0
 }
