@@ -9,11 +9,12 @@ use crate::dto::SerialDeviceDto;
 use crate::error::CommandResult;
 
 pub fn list_serial_devices() -> CommandResult<Vec<SerialDeviceDto>> {
-    let ports = serialport::available_ports()?;
     let mut devices = BTreeMap::<String, SerialDeviceDto>::new();
 
-    for device in ports.into_iter().map(to_dto) {
-        devices.insert(device.path.clone(), device);
+    if let Ok(ports) = serialport::available_ports() {
+        for device in ports.into_iter().map(to_dto) {
+            devices.insert(device.path.clone(), device);
+        }
     }
 
     for path in linux_serial_fallback_paths() {
@@ -123,20 +124,7 @@ fn fallback_display_name(path: &str) -> String {
 fn windows_serial_fallback_paths() -> Vec<String> {
     #[cfg(target_os = "windows")]
     {
-        let output = std::process::Command::new("reg")
-            .args(["query", r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"])
-            .output();
-        let Ok(output) = output else {
-            return Vec::new();
-        };
-        if !output.status.success() {
-            return Vec::new();
-        }
-
-        String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter_map(parse_windows_serialcomm_line)
-            .collect()
+        windows_serialcomm_registry_ports()
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -145,9 +133,66 @@ fn windows_serial_fallback_paths() -> Vec<String> {
 }
 
 #[cfg(target_os = "windows")]
-fn parse_windows_serialcomm_line(line: &str) -> Option<String> {
-    line.split_whitespace()
-        .last()
-        .filter(|value| value.to_ascii_uppercase().starts_with("COM"))
-        .map(ToString::to_string)
+fn windows_serialcomm_registry_ports() -> Vec<String> {
+    use windows_sys::Win32::Foundation::{ERROR_NO_MORE_ITEMS, ERROR_SUCCESS};
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegEnumValueW, RegOpenKeyExW, HKEY, HKEY_LOCAL_MACHINE, KEY_READ,
+    };
+
+    let subkey = wide_null(r"HARDWARE\DEVICEMAP\SERIALCOMM");
+    let mut key: HKEY = std::ptr::null_mut();
+    let open_result =
+        unsafe { RegOpenKeyExW(HKEY_LOCAL_MACHINE, subkey.as_ptr(), 0, KEY_READ, &mut key) };
+    if open_result != ERROR_SUCCESS {
+        return Vec::new();
+    }
+
+    let mut ports = Vec::new();
+    let mut index = 0;
+    loop {
+        let mut value_name = vec![0u16; 256];
+        let mut value_name_len = value_name.len() as u32;
+        let mut data = vec![0u16; 256];
+        let mut data_len = (data.len() * std::mem::size_of::<u16>()) as u32;
+        let result = unsafe {
+            RegEnumValueW(
+                key,
+                index,
+                value_name.as_mut_ptr(),
+                &mut value_name_len,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                data.as_mut_ptr().cast::<u8>(),
+                &mut data_len,
+            )
+        };
+
+        if result == ERROR_NO_MORE_ITEMS {
+            break;
+        }
+        if result == ERROR_SUCCESS {
+            let u16_len =
+                usize::try_from(data_len).unwrap_or_default() / std::mem::size_of::<u16>();
+            let end = data
+                .iter()
+                .take(u16_len)
+                .position(|value| *value == 0)
+                .unwrap_or(u16_len);
+            let port = String::from_utf16_lossy(&data[..end]);
+            if port.to_ascii_uppercase().starts_with("COM") {
+                ports.push(port);
+            }
+        }
+        index += 1;
+    }
+
+    unsafe {
+        RegCloseKey(key);
+    }
+    ports
+}
+
+#[cfg(target_os = "windows")]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }

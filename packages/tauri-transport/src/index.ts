@@ -25,15 +25,41 @@ type BackendError = {
   message?: string;
 };
 
+function isTransportErrorCode(value: string): value is TransportErrorCode {
+  return [
+    "notConnected",
+    "permissionDenied",
+    "timeout",
+    "unsupported",
+    "deviceError",
+    "unknown"
+  ].includes(value);
+}
+
 function normalizeError(error: unknown): TransportError {
   if (error instanceof TransportError) {
     return error;
+  }
+  if (error instanceof Error) {
+    return new TransportError("unknown", error.message);
   }
   if (typeof error === "object" && error !== null) {
     const backend = error as BackendError;
     if (backend.code && backend.message) {
       return new TransportError(backend.code, backend.message);
     }
+    const record = error as Record<string, unknown>;
+    const message =
+      typeof record.message === "string"
+        ? record.message
+        : typeof record.error === "string"
+          ? record.error
+          : JSON.stringify(record);
+    const code =
+      typeof record.code === "string" && isTransportErrorCode(record.code)
+        ? record.code
+        : "unknown";
+    return new TransportError(code, message);
   }
   if (typeof error === "string") {
     return new TransportError("unknown", error);

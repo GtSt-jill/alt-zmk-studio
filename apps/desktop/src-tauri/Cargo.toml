@@ -19,4 +19,5 @@ serialport = { version = "4.9", default-features = false }
 tauri = { version = "2.5", features = [] }
 thiserror = "2"
 tracing = "0.1"
+windows-sys = { version = "0.61", features = ["Win32_System_Registry", "Win32_Foundation"] }
 zmk-studio-api = { version = "0.3.1", default-features = false }
