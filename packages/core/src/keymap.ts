@@ -20,6 +20,48 @@ export type KeyPressBinding = {
   code: string;
 };
 
+export type KeyToggleBinding = {
+  kind: "keyToggle";
+  code: string;
+};
+
+export type StickyKeyBinding = {
+  kind: "stickyKey";
+  code: string;
+};
+
+export type MomentaryLayerBinding = {
+  kind: "momentaryLayer";
+  layerId: LayerId;
+};
+
+export type ToggleLayerBinding = {
+  kind: "toggleLayer";
+  layerId: LayerId;
+};
+
+export type ToLayerBinding = {
+  kind: "toLayer";
+  layerId: LayerId;
+};
+
+export type StickyLayerBinding = {
+  kind: "stickyLayer";
+  layerId: LayerId;
+};
+
+export type LayerTapBinding = {
+  kind: "layerTap";
+  layerId: LayerId;
+  tap: string;
+};
+
+export type ModTapBinding = {
+  kind: "modTap";
+  hold: string;
+  tap: string;
+};
+
 export type TransparentBinding = {
   kind: "transparent";
 };
@@ -36,6 +78,14 @@ export type UnsupportedBinding = {
 
 export type KeyBinding =
   | KeyPressBinding
+  | KeyToggleBinding
+  | StickyKeyBinding
+  | MomentaryLayerBinding
+  | ToggleLayerBinding
+  | ToLayerBinding
+  | StickyLayerBinding
+  | LayerTapBinding
+  | ModTapBinding
   | TransparentBinding
   | NoneBinding
   | UnsupportedBinding;

@@ -14,8 +14,23 @@ export type LayerDto = {
 };
 
 export type KeyBindingDto = {
-  kind: "keyPress" | "transparent" | "none" | "unsupported";
+  kind:
+    | "keyPress"
+    | "keyToggle"
+    | "stickyKey"
+    | "momentaryLayer"
+    | "toggleLayer"
+    | "toLayer"
+    | "stickyLayer"
+    | "layerTap"
+    | "modTap"
+    | "transparent"
+    | "none"
+    | "unsupported";
   code?: string | null;
+  layerId?: number | null;
+  hold?: string | null;
+  tap?: string | null;
   behavior?: string | null;
   params?: string[] | null;
 };
@@ -64,6 +79,30 @@ export function keyBindingFromDto(dto: KeyBindingDto): KeyBinding {
   if (dto.kind === "keyPress" && dto.code) {
     return { kind: "keyPress", code: dto.code };
   }
+  if (dto.kind === "keyToggle" && dto.code) {
+    return { kind: "keyToggle", code: dto.code };
+  }
+  if (dto.kind === "stickyKey" && dto.code) {
+    return { kind: "stickyKey", code: dto.code };
+  }
+  if (dto.kind === "momentaryLayer" && dto.layerId !== null && dto.layerId !== undefined) {
+    return { kind: "momentaryLayer", layerId: dto.layerId };
+  }
+  if (dto.kind === "toggleLayer" && dto.layerId !== null && dto.layerId !== undefined) {
+    return { kind: "toggleLayer", layerId: dto.layerId };
+  }
+  if (dto.kind === "toLayer" && dto.layerId !== null && dto.layerId !== undefined) {
+    return { kind: "toLayer", layerId: dto.layerId };
+  }
+  if (dto.kind === "stickyLayer" && dto.layerId !== null && dto.layerId !== undefined) {
+    return { kind: "stickyLayer", layerId: dto.layerId };
+  }
+  if (dto.kind === "layerTap" && dto.layerId !== null && dto.layerId !== undefined && dto.tap) {
+    return { kind: "layerTap", layerId: dto.layerId, tap: dto.tap };
+  }
+  if (dto.kind === "modTap" && dto.hold && dto.tap) {
+    return { kind: "modTap", hold: dto.hold, tap: dto.tap };
+  }
   if (dto.kind === "transparent") {
     return { kind: "transparent" };
   }
@@ -81,6 +120,22 @@ export function keyBindingToDto(binding: KeyBinding): KeyBindingDto {
   switch (binding.kind) {
     case "keyPress":
       return { kind: "keyPress", code: binding.code };
+    case "keyToggle":
+      return { kind: "keyToggle", code: binding.code };
+    case "stickyKey":
+      return { kind: "stickyKey", code: binding.code };
+    case "momentaryLayer":
+      return { kind: "momentaryLayer", layerId: binding.layerId };
+    case "toggleLayer":
+      return { kind: "toggleLayer", layerId: binding.layerId };
+    case "toLayer":
+      return { kind: "toLayer", layerId: binding.layerId };
+    case "stickyLayer":
+      return { kind: "stickyLayer", layerId: binding.layerId };
+    case "layerTap":
+      return { kind: "layerTap", layerId: binding.layerId, tap: binding.tap };
+    case "modTap":
+      return { kind: "modTap", hold: binding.hold, tap: binding.tap };
     case "transparent":
       return { kind: "transparent" };
     case "none":

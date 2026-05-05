@@ -179,9 +179,36 @@ impl Write for SerialPortTransport {
 fn behavior_to_dto(behavior: Behavior) -> KeyBindingDto {
     match behavior {
         Behavior::KeyPress(usage) => KeyBindingDto::key_press(usage.to_string()),
+        Behavior::KeyToggle(usage) => binding_with_code("keyToggle", usage.to_string()),
+        Behavior::StickyKey(usage) => binding_with_code("stickyKey", usage.to_string()),
+        Behavior::MomentaryLayer { layer_id } => binding_with_layer("momentaryLayer", layer_id),
+        Behavior::ToggleLayer { layer_id } => binding_with_layer("toggleLayer", layer_id),
+        Behavior::ToLayer { layer_id } => binding_with_layer("toLayer", layer_id),
+        Behavior::StickyLayer { layer_id } => binding_with_layer("stickyLayer", layer_id),
+        Behavior::LayerTap { layer_id, tap } => KeyBindingDto {
+            kind: "layerTap".to_string(),
+            code: None,
+            layer_id: Some(layer_id),
+            hold: None,
+            tap: Some(tap.to_string()),
+            behavior: None,
+            params: None,
+        },
+        Behavior::ModTap { hold, tap } => KeyBindingDto {
+            kind: "modTap".to_string(),
+            code: None,
+            layer_id: None,
+            hold: Some(hold.to_string()),
+            tap: Some(tap.to_string()),
+            behavior: None,
+            params: None,
+        },
         Behavior::Transparent => KeyBindingDto {
             kind: "transparent".to_string(),
             code: None,
+            layer_id: None,
+            hold: None,
+            tap: None,
             behavior: None,
             params: None,
         },
@@ -189,6 +216,9 @@ fn behavior_to_dto(behavior: Behavior) -> KeyBindingDto {
         other => KeyBindingDto {
             kind: "unsupported".to_string(),
             code: None,
+            layer_id: None,
+            hold: None,
+            tap: None,
             behavior: Some(format!("{other:?}")),
             params: Some(Vec::new()),
         },
@@ -202,16 +232,57 @@ fn dto_to_behavior(binding: &KeyBindingDto) -> CommandResult<Behavior> {
                 .code
                 .as_deref()
                 .ok_or_else(|| CommandError::new("deviceError", "Missing key press code."))?;
-            let keycode = Keycode::from_name(code).ok_or_else(|| {
-                CommandError::new("unsupported", format!("Unknown keycode: {code}"))
-            })?;
-            Ok(Behavior::KeyPress(HidUsage::from_encoded(
-                keycode.to_hid_usage(),
-            )))
+            Ok(Behavior::KeyPress(hid_usage_from_code(code)?))
         }
+        "keyToggle" => {
+            let code = required_code(binding)?;
+            Ok(Behavior::KeyToggle(hid_usage_from_code(code)?))
+        }
+        "stickyKey" => {
+            let code = required_code(binding)?;
+            Ok(Behavior::StickyKey(hid_usage_from_code(code)?))
+        }
+        "momentaryLayer" => Ok(Behavior::MomentaryLayer {
+            layer_id: required_layer(binding)?,
+        }),
+        "toggleLayer" => Ok(Behavior::ToggleLayer {
+            layer_id: required_layer(binding)?,
+        }),
+        "toLayer" => Ok(Behavior::ToLayer {
+            layer_id: required_layer(binding)?,
+        }),
+        "stickyLayer" => Ok(Behavior::StickyLayer {
+            layer_id: required_layer(binding)?,
+        }),
+        "layerTap" => {
+            let tap = binding
+                .tap
+                .as_deref()
+                .ok_or_else(|| CommandError::new("deviceError", "Missing layer-tap tap code."))?;
+            Ok(Behavior::LayerTap {
+                layer_id: required_layer(binding)?,
+                tap: hid_usage_from_code(tap)?,
+            })
+        }
+        "modTap" => {
+            let hold = binding
+                .hold
+                .as_deref()
+                .ok_or_else(|| CommandError::new("deviceError", "Missing mod-tap hold code."))?;
+            let tap = binding
+                .tap
+                .as_deref()
+                .ok_or_else(|| CommandError::new("deviceError", "Missing mod-tap tap code."))?;
+            Ok(Behavior::ModTap {
+                hold: hid_usage_from_code(hold)?,
+                tap: hid_usage_from_code(tap)?,
+            })
+        }
+        "transparent" => Ok(Behavior::Transparent),
+        "none" => Ok(Behavior::None),
         _ => Err(CommandError::new(
             "unsupported",
-            "MVP only supports key press bindings.",
+            format!("Unsupported binding kind: {}", binding.kind),
         )),
     }
 }
@@ -241,4 +312,47 @@ fn physical_size(value: i32) -> f32 {
 
 fn physical_rotation(value: i32) -> f32 {
     value as f32 / 100.0
+}
+
+fn binding_with_code(kind: &str, code: String) -> KeyBindingDto {
+    KeyBindingDto {
+        kind: kind.to_string(),
+        code: Some(code),
+        layer_id: None,
+        hold: None,
+        tap: None,
+        behavior: None,
+        params: None,
+    }
+}
+
+fn binding_with_layer(kind: &str, layer_id: u32) -> KeyBindingDto {
+    KeyBindingDto {
+        kind: kind.to_string(),
+        code: None,
+        layer_id: Some(layer_id),
+        hold: None,
+        tap: None,
+        behavior: None,
+        params: None,
+    }
+}
+
+fn required_code(binding: &KeyBindingDto) -> CommandResult<&str> {
+    binding
+        .code
+        .as_deref()
+        .ok_or_else(|| CommandError::new("deviceError", "Missing keycode."))
+}
+
+fn required_layer(binding: &KeyBindingDto) -> CommandResult<u32> {
+    binding
+        .layer_id
+        .ok_or_else(|| CommandError::new("deviceError", "Missing layer id."))
+}
+
+fn hid_usage_from_code(code: &str) -> CommandResult<HidUsage> {
+    let keycode = Keycode::from_name(code)
+        .ok_or_else(|| CommandError::new("unsupported", format!("Unknown keycode: {code}")))?;
+    Ok(HidUsage::from_encoded(keycode.to_hid_usage()))
 }

@@ -29,16 +29,40 @@ const keyLabels: Record<string, string> = {
   Z: "Z",
   ENTER: "Enter",
   ESC: "Esc",
-  SPACE: "Space",
+  SPC: "Space",
   TAB: "Tab",
   BSPC: "Backspace",
-  DEL: "Delete"
+  DEL: "Delete",
+  LCTL: "L Ctrl",
+  LSHFT: "L Shift",
+  LALT: "L Alt",
+  LGUI: "L Gui",
+  RCTL: "R Ctrl",
+  RSHFT: "R Shift",
+  RALT: "R Alt",
+  RGUI: "R Gui"
 };
 
 export function formatKeyBinding(binding: KeyBinding): string {
   switch (binding.kind) {
     case "keyPress":
       return keyLabels[binding.code] ?? binding.code;
+    case "keyToggle":
+      return `&kt ${keyLabels[binding.code] ?? binding.code}`;
+    case "stickyKey":
+      return `&sk ${keyLabels[binding.code] ?? binding.code}`;
+    case "momentaryLayer":
+      return `MO ${binding.layerId}`;
+    case "toggleLayer":
+      return `TG ${binding.layerId}`;
+    case "toLayer":
+      return `TO ${binding.layerId}`;
+    case "stickyLayer":
+      return `SL ${binding.layerId}`;
+    case "layerTap":
+      return `LT ${binding.layerId} ${keyLabels[binding.tap] ?? binding.tap}`;
+    case "modTap":
+      return `MT ${keyLabels[binding.hold] ?? binding.hold} ${keyLabels[binding.tap] ?? binding.tap}`;
     case "transparent":
       return "▽";
     case "none":
@@ -77,8 +101,19 @@ export const commonKeyPressCodes = [
   "Z",
   "ENTER",
   "ESC",
-  "SPACE",
+  "SPC",
   "TAB",
   "BSPC",
   "DEL"
+] as const;
+
+export const commonModifierCodes = [
+  "LCTL",
+  "LSHFT",
+  "LALT",
+  "LGUI",
+  "RCTL",
+  "RSHFT",
+  "RALT",
+  "RGUI"
 ] as const;

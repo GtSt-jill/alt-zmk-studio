@@ -33,6 +33,7 @@ type DeviceState = {
   setActiveLayer: (layerId: LayerId) => Promise<void>;
   selectKey: (position: KeyPosition) => void;
   setSelectedKeyPress: (code: string) => Promise<void>;
+  setSelectedBinding: (binding: KeyBinding) => Promise<void>;
   clearError: () => void;
 };
 
@@ -169,11 +170,14 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
   },
 
   async setSelectedKeyPress(code) {
+    await get().setSelectedBinding({ kind: "keyPress", code });
+  },
+
+  async setSelectedBinding(nextBinding) {
     const { activeLayerId, selectedPosition } = get();
     if (activeLayerId === null || selectedPosition === null) {
       return;
     }
-    const nextBinding: KeyBinding = { kind: "keyPress", code };
     set({ status: "loading", error: null });
     try {
       const savedBinding = await getDeviceTransport().setKeyBinding(

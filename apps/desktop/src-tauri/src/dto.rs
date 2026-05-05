@@ -53,6 +53,9 @@ pub struct KeyboardLayoutKeyDto {
 pub struct KeyBindingDto {
     pub kind: String,
     pub code: Option<String>,
+    pub layer_id: Option<u32>,
+    pub hold: Option<String>,
+    pub tap: Option<String>,
     pub behavior: Option<String>,
     pub params: Option<Vec<String>>,
 }
@@ -62,6 +65,9 @@ impl KeyBindingDto {
         Self {
             kind: "keyPress".to_string(),
             code: Some(code.into()),
+            layer_id: None,
+            hold: None,
+            tap: None,
             behavior: None,
             params: None,
         }
@@ -71,6 +77,9 @@ impl KeyBindingDto {
         Self {
             kind: "none".to_string(),
             code: None,
+            layer_id: None,
+            hold: None,
+            tap: None,
             behavior: None,
             params: None,
         }
