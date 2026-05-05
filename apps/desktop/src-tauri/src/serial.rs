@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::path::Path;
+use std::path::PathBuf;
 
 use serialport::{SerialPortInfo, SerialPortType};
 
@@ -23,6 +24,20 @@ pub fn list_serial_devices() -> CommandResult<Vec<SerialDeviceDto>> {
                 id: path.clone(),
                 path: path.clone(),
                 display_name: fallback_display_name(&path),
+                manufacturer: None,
+                product: None,
+                vendor_id: None,
+                product_id: None,
+            });
+    }
+
+    for path in windows_serial_fallback_paths() {
+        devices
+            .entry(path.clone())
+            .or_insert_with(|| SerialDeviceDto {
+                id: path.clone(),
+                path: path.clone(),
+                display_name: format!("Serial port - {path}"),
                 manufacturer: None,
                 product: None,
                 vendor_id: None,
@@ -64,7 +79,7 @@ fn linux_serial_fallback_paths() -> Vec<PathBuf> {
         let mut paths = BTreeMap::<String, PathBuf>::new();
 
         for by_id_path in read_dir_paths(Path::new("/dev/serial/by-id")) {
-            let canonical = fs::canonicalize(&by_id_path).unwrap_or(by_id_path);
+            let canonical = std::fs::canonicalize(&by_id_path).unwrap_or(by_id_path);
             paths.insert(canonical.to_string_lossy().to_string(), canonical);
         }
 
@@ -87,7 +102,7 @@ fn linux_serial_fallback_paths() -> Vec<PathBuf> {
 
 #[cfg(target_os = "linux")]
 fn read_dir_paths(path: &Path) -> Vec<PathBuf> {
-    fs::read_dir(path)
+    std::fs::read_dir(path)
         .ok()
         .into_iter()
         .flat_map(|entries| entries.filter_map(Result::ok))
@@ -103,4 +118,36 @@ fn fallback_display_name(path: &str) -> String {
     } else {
         path.to_string()
     }
+}
+
+fn windows_serial_fallback_paths() -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let output = std::process::Command::new("reg")
+            .args(["query", r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"])
+            .output();
+        let Ok(output) = output else {
+            return Vec::new();
+        };
+        if !output.status.success() {
+            return Vec::new();
+        }
+
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(parse_windows_serialcomm_line)
+            .collect()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Vec::new()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn parse_windows_serialcomm_line(line: &str) -> Option<String> {
+    line.split_whitespace()
+        .last()
+        .filter(|value| value.to_ascii_uppercase().starts_with("COM"))
+        .map(ToString::to_string)
 }

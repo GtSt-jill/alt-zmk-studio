@@ -1,30 +1,30 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{Read, Write};
 use std::time::Duration;
 
-use serde_json::{json, Value};
 use serialport::SerialPort;
+use zmk_studio_api::{Behavior, HidUsage, Keycode, StudioClient};
 
 use crate::dto::{DeviceInfoDto, KeyBindingDto, KeyboardLayoutDto, LayerDto};
 use crate::error::{CommandError, CommandResult};
 
-const BAUD_RATE: u32 = 115_200;
-const RPC_TIMEOUT: Duration = Duration::from_millis(1500);
+const BAUD_RATE: u32 = 12_500;
+const RPC_TIMEOUT: Duration = Duration::from_millis(1_000);
+
+type ApiClient = StudioClient<SerialPortTransport>;
 
 pub struct ZmkClient {
     device_id: String,
-    port: Box<dyn SerialPort>,
+    client: ApiClient,
     info: Option<DeviceInfoDto>,
     layers: Option<Vec<LayerDto>>,
 }
 
 impl ZmkClient {
     pub fn connect(device_id: &str) -> CommandResult<Self> {
-        let port = serialport::new(device_id, BAUD_RATE)
-            .timeout(RPC_TIMEOUT)
-            .open()?;
+        let transport = SerialPortTransport::open(device_id)?;
         let mut client = Self {
             device_id: device_id.to_string(),
-            port,
+            client: StudioClient::new(transport),
             info: None,
             layers: None,
         };
@@ -39,27 +39,14 @@ impl ZmkClient {
             return Ok(info.clone());
         }
 
-        let response = self.request("get_device_info", json!({}))?;
+        let _ = self.client.get_device_info().map_err(map_client_error)?;
+        let key_count = self.key_count().unwrap_or(60);
         let info = DeviceInfoDto {
             id: self.device_id.clone(),
-            name: response
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or("ZMK Keyboard")
-                .to_string(),
-            manufacturer: response
-                .get("manufacturer")
-                .and_then(Value::as_str)
-                .map(ToString::to_string),
-            firmware_version: response
-                .get("firmwareVersion")
-                .and_then(Value::as_str)
-                .map(ToString::to_string),
-            key_count: response
-                .get("keyCount")
-                .and_then(Value::as_u64)
-                .and_then(|value| u16::try_from(value).ok())
-                .unwrap_or(60),
+            name: "ZMK Keyboard".to_string(),
+            manufacturer: None,
+            firmware_version: None,
+            key_count,
         };
         self.info = Some(info.clone());
         Ok(info)
@@ -70,56 +57,40 @@ impl ZmkClient {
             return Ok(layers.clone());
         }
 
-        let response = self.request("get_layers", json!({}))?;
-        let layers = response
-            .get("layers")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .enumerate()
-                    .map(|(index, item)| LayerDto {
-                        id: item
-                            .get("id")
-                            .and_then(Value::as_u64)
-                            .and_then(|value| u8::try_from(value).ok())
-                            .unwrap_or(index as u8),
-                        name: item
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .map(ToString::to_string)
-                            .unwrap_or_else(|| format!("Layer {index}")),
-                    })
-                    .collect::<Vec<_>>()
+        let keymap = self.client.get_keymap().map_err(map_client_error)?;
+        let layers = keymap
+            .layers
+            .iter()
+            .enumerate()
+            .map(|(index, layer)| LayerDto {
+                id: u8::try_from(layer.id).unwrap_or(index as u8),
+                name: format!("Layer {}", layer.id),
             })
-            .filter(|layers| !layers.is_empty())
-            .unwrap_or_else(|| {
-                vec![LayerDto {
-                    id: 0,
-                    name: "Layer 0".to_string(),
-                }]
-            });
+            .collect::<Vec<_>>();
+
+        let layers = if layers.is_empty() {
+            vec![LayerDto {
+                id: 0,
+                name: "Layer 0".to_string(),
+            }]
+        } else {
+            layers
+        };
+
         self.layers = Some(layers.clone());
         Ok(layers)
     }
 
     pub fn get_keyboard_layout(&mut self) -> CommandResult<Option<KeyboardLayoutDto>> {
-        match self.request("get_keyboard_layout", json!({})) {
-            Ok(response) => Ok(serde_json::from_value(response).ok()),
-            Err(error) if error.code == "unsupported" => Ok(None),
-            Err(error) => Err(error),
-        }
+        Ok(None)
     }
 
     pub fn get_key_binding(&mut self, layer_id: u8, position: u16) -> CommandResult<KeyBindingDto> {
-        let response = self.request(
-            "get_key_binding",
-            json!({
-                "layerId": layer_id,
-                "position": position
-            }),
-        )?;
-        Ok(parse_binding(response))
+        let behavior = self
+            .client
+            .get_key_at(u32::from(layer_id), i32::from(position))
+            .map_err(map_client_error)?;
+        Ok(behavior_to_dto(behavior))
     }
 
     pub fn set_key_binding(
@@ -128,83 +99,98 @@ impl ZmkClient {
         position: u16,
         binding: KeyBindingDto,
     ) -> CommandResult<KeyBindingDto> {
-        if binding.kind != "keyPress" {
-            return Err(CommandError::new(
-                "unsupported",
-                "MVP only supports key press bindings.",
-            ));
-        }
-        let response = self.request(
-            "set_key_binding",
-            json!({
-                "layerId": layer_id,
-                "position": position,
-                "binding": binding
-            }),
-        )?;
-        Ok(parse_binding(response))
+        let behavior = dto_to_behavior(&binding)?;
+        self.client
+            .set_key_at(u32::from(layer_id), i32::from(position), behavior)
+            .map_err(map_client_error)?;
+        self.client.save_changes().map_err(map_client_error)?;
+        self.get_key_binding(layer_id, position)
     }
 
-    fn request(&mut self, method: &str, params: Value) -> CommandResult<Value> {
-        // Abstraction boundary for zmk-studio-api:
-        // Replace this JSON-lines transport with the crate-backed RPC client once the
-        // crate API is finalized for this app. Commands above should not change.
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        });
-        let line = serde_json::to_string(&request)
-            .map_err(|error| CommandError::new("unknown", error.to_string()))?;
-        self.port.write_all(line.as_bytes())?;
-        self.port.write_all(b"\n")?;
-        self.port.flush()?;
-
-        let cloned = self.port.try_clone()?;
-        let mut reader = BufReader::new(cloned);
-        let mut response = String::new();
-        reader.read_line(&mut response)?;
-        if response.trim().is_empty() {
-            return Err(CommandError::new(
-                "timeout",
-                "RPC timeout waiting for device response.",
-            ));
-        }
-
-        let value: Value = serde_json::from_str(&response)
-            .map_err(|error| CommandError::new("deviceError", error.to_string()))?;
-        if let Some(error) = value.get("error") {
-            let code = error
-                .get("code")
-                .and_then(Value::as_str)
-                .unwrap_or("deviceError");
-            let message = error
-                .get("message")
-                .and_then(Value::as_str)
-                .unwrap_or("Device RPC failed.");
-            return Err(CommandError::new(map_error_code(code), message));
-        }
-        Ok(value.get("result").cloned().unwrap_or(value))
+    fn key_count(&mut self) -> Option<u16> {
+        let keymap = self.client.get_keymap().ok()?;
+        keymap
+            .layers
+            .first()
+            .and_then(|layer| u16::try_from(layer.bindings.len()).ok())
     }
 }
 
-fn parse_binding(value: Value) -> KeyBindingDto {
-    if let Ok(binding) = serde_json::from_value::<KeyBindingDto>(value.clone()) {
-        return binding;
-    }
-    if let Some(code) = value.get("code").and_then(Value::as_str) {
-        return KeyBindingDto::key_press(code);
-    }
-    KeyBindingDto::none()
+struct SerialPortTransport {
+    inner: Box<dyn SerialPort>,
 }
 
-fn map_error_code(code: &str) -> &'static str {
-    match code {
-        "timeout" => "timeout",
-        "permissionDenied" => "permissionDenied",
-        "unsupported" => "unsupported",
-        "notConnected" => "notConnected",
-        _ => "deviceError",
+impl SerialPortTransport {
+    fn open(path: &str) -> CommandResult<Self> {
+        let port = serialport::new(path, BAUD_RATE)
+            .timeout(RPC_TIMEOUT)
+            .open()?;
+        Ok(Self { inner: port })
     }
+}
+
+impl Read for SerialPortTransport {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl Write for SerialPortTransport {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.inner.write(buf)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+fn behavior_to_dto(behavior: Behavior) -> KeyBindingDto {
+    match behavior {
+        Behavior::KeyPress(usage) => KeyBindingDto::key_press(usage.to_string()),
+        Behavior::Transparent => KeyBindingDto {
+            kind: "transparent".to_string(),
+            code: None,
+            behavior: None,
+            params: None,
+        },
+        Behavior::None => KeyBindingDto::none(),
+        other => KeyBindingDto {
+            kind: "unsupported".to_string(),
+            code: None,
+            behavior: Some(format!("{other:?}")),
+            params: Some(Vec::new()),
+        },
+    }
+}
+
+fn dto_to_behavior(binding: &KeyBindingDto) -> CommandResult<Behavior> {
+    match binding.kind.as_str() {
+        "keyPress" => {
+            let code = binding
+                .code
+                .as_deref()
+                .ok_or_else(|| CommandError::new("deviceError", "Missing key press code."))?;
+            let keycode = Keycode::from_name(code).ok_or_else(|| {
+                CommandError::new("unsupported", format!("Unknown keycode: {code}"))
+            })?;
+            Ok(Behavior::KeyPress(HidUsage::from_encoded(
+                keycode.to_hid_usage(),
+            )))
+        }
+        _ => Err(CommandError::new(
+            "unsupported",
+            "MVP only supports key press bindings.",
+        )),
+    }
+}
+
+fn map_client_error(error: impl std::fmt::Display) -> CommandError {
+    let message = error.to_string();
+    let code = if message.to_ascii_lowercase().contains("timeout") {
+        "timeout"
+    } else {
+        "deviceError"
+    };
+    CommandError::new(code, message)
 }
