@@ -54,3 +54,14 @@ React components do not call Tauri directly. They use a service/store backed by 
 - No custom behavior definitions.
 - No physical layout definition editing. A placeholder grid is used when layout metadata is unavailable.
 - The Rust RPC client includes a bounded abstraction and conservative placeholder framing. Real-device protocol tuning may be needed depending on the final `zmk-studio-api` integration.
+
+## USB Serial Notes
+
+ZMK Studio USB transport uses a CDC-ACM serial port. On Linux this usually appears
+as `/dev/ttyACM0` or a symlink under `/dev/serial/by-id`.
+
+If you run this app from WSL, a keyboard visible to Windows ZMK Studio is not
+automatically visible inside WSL. Attach the USB device to WSL first, or run the
+desktop app on the host OS. When automatic enumeration fails but you know the
+port, enter it manually in the device selector, for example `/dev/ttyACM0` or
+`COM3`.

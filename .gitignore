@@ -5,6 +5,7 @@ node_modules/
 !.yarn/patches/
 dist/
 target/
+apps/desktop/src-tauri/gen/
 .turbo/
 .vite/
 *.tsbuildinfo
